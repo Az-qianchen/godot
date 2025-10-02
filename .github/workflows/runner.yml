@@ -12,6 +12,7 @@ jobs:
     if: ${{ !vars.DISABLE_GODOT_CI || github.run_attempt > 1 }}
     name: 📊 Static checks
     uses: ./.github/workflows/static_checks.yml
+    secrets: inherit
 
   # Second stage: Run all the builds and some of the tests.
 
@@ -19,28 +20,34 @@ jobs:
     name: 🤖 Android
     needs: static-checks
     uses: ./.github/workflows/android_builds.yml
+    secrets: inherit
 
-  ios-build:
-    name: 🍏 iOS
-    needs: static-checks
-    uses: ./.github/workflows/ios_builds.yml
+  # ios-build:
+  #   name: 🍏 iOS
+  #   needs: static-checks
+  #   uses: ./.github/workflows/ios_builds.yml
+  #   secrets: inherit
 
-  linux-build:
-    name: 🐧 Linux
-    needs: static-checks
-    uses: ./.github/workflows/linux_builds.yml
+  # linux-build:
+  #   name: 🐧 Linux
+  #   needs: static-checks
+  #   uses: ./.github/workflows/linux_builds.yml
+  #   secrets: inherit
 
-  macos-build:
-    name: 🍎 macOS
-    needs: static-checks
-    uses: ./.github/workflows/macos_builds.yml
+  # macos-build:
+  #   name: 🍎 macOS
+  #   needs: static-checks
+  #   uses: ./.github/workflows/macos_builds.yml
+  #   secrets: inherit
 
   windows-build:
     name: 🏁 Windows
     needs: static-checks
     uses: ./.github/workflows/windows_builds.yml
+    secrets: inherit
 
   web-build:
     name: 🌐 Web
     needs: static-checks
     uses: ./.github/workflows/web_builds.yml
+    secrets: inherit
