@@ -12,7 +12,6 @@ jobs:
     if: ${{ !vars.DISABLE_GODOT_CI || github.run_attempt > 1 }}
     name: 📊 Static checks
     uses: ./.github/workflows/static_checks.yml
-    secrets: inherit
 
   # Second stage: Run all the builds and some of the tests.
 
@@ -20,7 +19,9 @@ jobs:
     name: 🤖 Android
     needs: static-checks
     uses: ./.github/workflows/android_builds.yml
-    secrets: inherit
+    # secrets: inherit
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
   # ios-build:
   #   name: 🍏 iOS
@@ -44,10 +45,14 @@ jobs:
     name: 🏁 Windows
     needs: static-checks
     uses: ./.github/workflows/windows_builds.yml
-    secrets: inherit
+    # secrets: inherit
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
 
   web-build:
     name: 🌐 Web
     needs: static-checks
     uses: ./.github/workflows/web_builds.yml
-    secrets: inherit
+    # secrets: inherit
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
