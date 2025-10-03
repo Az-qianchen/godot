@@ -1,7 +1,9 @@
 name: 🏁 Windows Builds
 on:
   workflow_call:
-
+    secrets:
+      SCRIPT_AES256_ENCRYPTION_KEY:
+        required: true
 # Global Settings
 env:
   SCONS_FLAGS: >-
@@ -63,7 +65,7 @@ jobs:
             target: template_debug
             bin: ./bin/windows.template_debug.x86_64.exe
             compiler: msvc
-          
+            
           - name: Template GCC Debug
             cache-name: windows-template-gcc-debug
             target: template_debug
