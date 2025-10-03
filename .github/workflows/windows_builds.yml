@@ -47,7 +47,7 @@ jobs:
           - name: Template (target=template_release)
             cache-name: windows-template
             target: template_release
-            bin: ./bin/godot.windows.template_release.x86_64.console.exe
+            bin: ./bin/windows.template_release.x86_64.exe
             compiler: msvc
 
           - name: Template w/ GCC (target=template_release, use_mingw=yes)
@@ -55,7 +55,20 @@ jobs:
             # MinGW takes MUCH longer to compile; save time by only targeting Template.
             target: template_release
             scons-flags: use_mingw=yes
-            bin: ./bin/godot.windows.template_release.x86_64.console.exe
+            bin: ./bin/windows.template_release.x86_64.exe
+            compiler: gcc
+
+          - name: Template MSVC Debug
+            cache-name: windows-template-msvc-debug
+            target: template_debug
+            bin: ./bin/windows.template_debug.x86_64.exe
+            compiler: msvc
+          
+          - name: Template GCC Debug
+            cache-name: windows-template-gcc-debug
+            target: template_debug
+            scons-flags: use_mingw=yes
+            bin: ./bin/windows.template_debug.x86_64.exe
             compiler: gcc
 
     steps:
