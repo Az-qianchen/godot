@@ -20,6 +20,8 @@ jobs:
   build-windows:
     # Windows 10 with latest image
     runs-on: windows-latest
+    env:
+      SCRIPT_AES256_ENCRYPTION_KEY: ${{ secrets.SCRIPT_AES256_ENCRYPTION_KEY }}
     name: ${{ matrix.name }}
     timeout-minutes: 120
     strategy:
