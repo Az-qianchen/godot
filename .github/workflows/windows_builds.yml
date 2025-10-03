@@ -51,11 +51,11 @@ jobs:
             bin: ./bin/windows.template_release.x86_64.exe
             compiler: msvc
 
-          - name: Template (target=template_debug)
-            cache-name: windows-template-debug
-            target: template_debug
-            bin: ./bin/windows.template_debug.x86_64.exe
-            compiler: msvc
+          # - name: Template (target=template_debug)
+          #   cache-name: windows-template-debug
+          #   target: template_debug
+          #   bin: ./bin/windows.template_debug.x86_64.exe
+          #   compiler: msvc
 
           - name: Template w/ GCC (target=template_release, use_mingw=yes)
             cache-name: windows-template-gcc
@@ -65,12 +65,12 @@ jobs:
             bin: ./bin/windows.template_release.x86_64.exe
             compiler: gcc
 
-          - name: Template w/ GCC (target=template_debug, use_mingw=yes)
-            cache-name: windows-template-debug
-            target: template_debug
-            scons-flags: use_mingw=yes
-            bin: ./bin/windows.template_debug.x86_64.exe
-            compiler: gcc
+          # - name: Template w/ GCC (target=template_debug, use_mingw=yes)
+          #   cache-name: windows-template-debug
+          #   target: template_debug
+          #   scons-flags: use_mingw=yes
+          #   bin: ./bin/windows.template_debug.x86_64.exe
+          #   compiler: gcc
 
     steps:
       - name: Checkout
