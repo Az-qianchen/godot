@@ -60,14 +60,14 @@ jobs:
             bin: ./bin/windows.template_release.x86_64.exe
             compiler: gcc
 
-          - name: Template MSVC Debug
-            cache-name: windows-template-msvc-debug
+          - name: Template (target=template_debug)
+            cache-name: windows-template-debug
             target: template_debug
             bin: ./bin/windows.template_debug.x86_64.exe
             compiler: msvc
             
-          - name: Template GCC Debug
-            cache-name: windows-template-gcc-debug
+          - name: Template w/ GCC (target=template_debug, use_mingw=yes)
+            cache-name: windows-template-debug
             target: template_debug
             scons-flags: use_mingw=yes
             bin: ./bin/windows.template_debug.x86_64.exe
