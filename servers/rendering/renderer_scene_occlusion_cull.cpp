@@ -30,24 +30,12 @@
 
 #include "renderer_scene_occlusion_cull.h"
 
+#include "core/config/engine.h"
+#include "servers/rendering/rendering_server.h"
+
 RendererSceneOcclusionCull *RendererSceneOcclusionCull::singleton = nullptr;
 
-const Vector3 RendererSceneOcclusionCull::HZBuffer::corners[8] = {
-	Vector3(0, 0, 0),
-	Vector3(0, 0, 1),
-	Vector3(0, 1, 0),
-	Vector3(0, 1, 1),
-	Vector3(1, 0, 0),
-	Vector3(1, 0, 1),
-	Vector3(1, 1, 0),
-	Vector3(1, 1, 1)
-};
-
 bool RendererSceneOcclusionCull::HZBuffer::occlusion_jitter_enabled = false;
-
-bool RendererSceneOcclusionCull::HZBuffer::is_empty() const {
-	return sizes.is_empty();
-}
 
 void RendererSceneOcclusionCull::HZBuffer::clear() {
 	if (sizes.is_empty()) {

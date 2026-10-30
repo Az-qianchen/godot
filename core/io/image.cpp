@@ -29,12 +29,14 @@
 /**************************************************************************/
 
 #include "image.h"
+#include "image.compat.inc"
 
 #include "core/config/project_settings.h"
 #include "core/error/error_macros.h"
 #include "core/io/image_loader.h"
 #include "core/io/resource_loader.h"
 #include "core/math/math_funcs.h"
+#include "core/object/class_db.h"
 #include "core/templates/hash_map.h"
 #include "core/variant/dictionary.h"
 
@@ -91,12 +93,12 @@ const char *Image::format_names[Image::FORMAT_MAX] = {
 // External VRAM compression function pointers.
 
 void (*Image::_image_compress_bc_func)(Image *, Image::UsedChannels) = nullptr;
-void (*Image::_image_compress_bptc_func)(Image *, Image::UsedChannels) = nullptr;
+void (*Image::_image_compress_bptc_func)(Image *, Image::UsedChannels, Image::BPTCFormat) = nullptr;
 void (*Image::_image_compress_etc1_func)(Image *) = nullptr;
 void (*Image::_image_compress_etc2_func)(Image *, Image::UsedChannels) = nullptr;
 void (*Image::_image_compress_astc_func)(Image *, Image::ASTCFormat) = nullptr;
 
-Error (*Image::_image_compress_bptc_rd_func)(Image *, Image::UsedChannels) = nullptr;
+Error (*Image::_image_compress_bptc_rd_func)(Image *, Image::UsedChannels, Image::BPTCFormat) = nullptr;
 Error (*Image::_image_compress_bc_rd_func)(Image *, Image::UsedChannels) = nullptr;
 
 // External VRAM decompression function pointers.
@@ -568,13 +570,12 @@ static bool _are_formats_compatible(Image::Format p_format0, Image::Format p_for
 
 void Image::convert(Format p_new_format) {
 	ERR_FAIL_INDEX_MSG(p_new_format, FORMAT_MAX, vformat("The Image format specified (%d) is out of range. See Image's Format enum.", p_new_format));
+	ERR_FAIL_COND_MSG(Image::is_format_compressed(format) || Image::is_format_compressed(p_new_format),
+			"Cannot convert to (or from) compressed formats. Use compress() and decompress() instead.");
 
 	if (data.is_empty() || p_new_format == format) {
 		return;
 	}
-
-	ERR_FAIL_COND_MSG(Image::is_format_compressed(format) || Image::is_format_compressed(p_new_format),
-			"Cannot convert to (or from) compressed formats. Use compress() and decompress() instead.");
 
 	// Includes the main image.
 	const int mipmap_count = get_mipmap_count() + 1;
@@ -584,24 +585,23 @@ void Image::convert(Format p_new_format) {
 		Image new_img(width, height, mipmaps, p_new_format);
 
 		for (int mip = 0; mip < mipmap_count; mip++) {
-			Ref<Image> src_mip = get_image_from_mipmap(mip);
-			Ref<Image> new_mip = new_img.get_image_from_mipmap(mip);
+			int64_t src_mip_ofs, dst_mip_ofs;
+			int w, h;
+			_get_mipmap_offset_and_size(mip, src_mip_ofs, w, h);
+			new_img._get_mipmap_offset_and_size(mip, dst_mip_ofs, w, h);
 
-			for (int y = 0; y < src_mip->height; y++) {
-				for (int x = 0; x < src_mip->width; x++) {
-					new_mip->set_pixel(x, y, src_mip->get_pixel(x, y));
+			uint8_t *dst_mip_ptr = new_img.ptrw() + dst_mip_ofs;
+			const uint8_t *src_mip_ptr = ptr() + src_mip_ofs;
+
+			for (int y = 0; y < h; y++) {
+				for (int x = 0; x < w; x++) {
+					uint32_t mip_ofs = y * w + x;
+					new_img._set_color_at_ofs(dst_mip_ptr, mip_ofs, _get_color_at_ofs(src_mip_ptr, mip_ofs));
 				}
 			}
-
-			int64_t mip_offset = 0;
-			int64_t mip_size = 0;
-			new_img.get_mipmap_offset_and_size(mip, mip_offset, mip_size);
-
-			memcpy(new_img.data.ptrw() + mip_offset, new_mip->data.ptr(), mip_size);
 		}
 
 		_copy_internals_from(new_img);
-
 		return;
 	}
 
@@ -1233,14 +1233,14 @@ static void _overlay(const uint8_t *__restrict p_src, uint8_t *__restrict p_dst,
 }
 
 bool Image::is_size_po2() const {
-	return is_power_of_2(width) && is_power_of_2(height);
+	return Math::is_power_of_2(width) && Math::is_power_of_2(height);
 }
 
 void Image::resize_to_po2(bool p_square, Interpolation p_interpolation) {
 	ERR_FAIL_COND_MSG(is_compressed(), "Cannot resize in compressed image formats.");
 
-	int w = next_power_of_2((uint32_t)width);
-	int h = next_power_of_2((uint32_t)height);
+	int w = Math::next_power_of_2((uint32_t)width);
+	int h = Math::next_power_of_2((uint32_t)height);
 	if (p_square) {
 		w = h = MAX(w, h);
 	}
@@ -1257,9 +1257,6 @@ void Image::resize_to_po2(bool p_square, Interpolation p_interpolation) {
 void Image::resize(int p_width, int p_height, Interpolation p_interpolation) {
 	ERR_FAIL_COND_MSG(data.is_empty(), "Cannot resize image before creating it, use set_data() first.");
 	ERR_FAIL_COND_MSG(is_compressed(), "Cannot resize in compressed image formats.");
-
-	bool mipmap_aware = p_interpolation == INTERPOLATE_TRILINEAR /* || p_interpolation == INTERPOLATE_TRICUBIC */;
-
 	ERR_FAIL_COND_MSG(p_width <= 0, "Image width must be greater than 0.");
 	ERR_FAIL_COND_MSG(p_height <= 0, "Image height must be greater than 0.");
 	ERR_FAIL_COND_MSG(p_width > MAX_WIDTH, vformat("Image width cannot be greater than %d pixels.", MAX_WIDTH));
@@ -1270,9 +1267,19 @@ void Image::resize(int p_width, int p_height, Interpolation p_interpolation) {
 		return;
 	}
 
+	// Convert the image to 'standard' RGB(A) formats that may be resized.
+	Format original_format = format;
+	if (original_format == FORMAT_RGB565 || original_format == FORMAT_RGBA4444) {
+		convert(FORMAT_RGBA8);
+	} else if (original_format == FORMAT_RGBE9995) {
+		convert(FORMAT_RGBH);
+	}
+
 	Image dst(p_width, p_height, false, format);
 
 	// Setup mipmap-aware scaling
+	bool mipmap_aware = p_interpolation == INTERPOLATE_TRILINEAR /* || p_interpolation == INTERPOLATE_TRICUBIC */;
+
 	Image dst2;
 	int mip1 = 0;
 	int mip2 = 0;
@@ -1616,6 +1623,11 @@ void Image::resize(int p_width, int p_height, Interpolation p_interpolation) {
 	}
 
 	_copy_internals_from(dst);
+
+	// Reconvert the image to its original format.
+	if (original_format != format) {
+		convert(original_format);
+	}
 }
 
 void Image::crop_from_point(int p_x, int p_y, int p_width, int p_height) {
@@ -2602,24 +2614,24 @@ void Image::initialize_data(const char **p_xpm) {
 #define DETECT_ALPHA_MAX_THRESHOLD 254
 #define DETECT_ALPHA_MIN_THRESHOLD 2
 
-#define DETECT_ALPHA(m_value)                          \
-	{                                                  \
-		uint8_t value = m_value;                       \
-		if (value < DETECT_ALPHA_MIN_THRESHOLD)        \
-			bit = true;                                \
+#define DETECT_ALPHA(m_value) \
+	{ \
+		uint8_t value = m_value; \
+		if (value < DETECT_ALPHA_MIN_THRESHOLD) \
+			bit = true; \
 		else if (value < DETECT_ALPHA_MAX_THRESHOLD) { \
-			detected = true;                           \
-			break;                                     \
-		}                                              \
+			detected = true; \
+			break; \
+		} \
 	}
 
 #define DETECT_NON_ALPHA(m_value) \
-	{                             \
-		uint8_t value = m_value;  \
-		if (value > 0) {          \
-			detected = true;      \
-			break;                \
-		}                         \
+	{ \
+		uint8_t value = m_value; \
+		if (value > 0) { \
+			detected = true; \
+			break; \
+		} \
 	}
 
 bool Image::is_invisible() const {
@@ -2809,19 +2821,18 @@ Vector<uint8_t> Image::save_jpg_to_buffer(float p_quality) const {
 	return save_jpg_buffer_func(Ref<Image>((Image *)this), p_quality);
 }
 
-Error Image::save_exr(const String &p_path, bool p_grayscale) const {
+Error Image::save_exr(const String &p_path, bool p_grayscale, bool p_color_image, float p_max_value) const {
 	if (save_exr_func == nullptr) {
 		return ERR_UNAVAILABLE;
 	}
-
-	return save_exr_func(p_path, Ref<Image>((Image *)this), p_grayscale);
+	return save_exr_func(p_path, Ref<Image>((Image *)this), p_grayscale, p_color_image, p_max_value);
 }
 
-Vector<uint8_t> Image::save_exr_to_buffer(bool p_grayscale) const {
+Vector<uint8_t> Image::save_exr_to_buffer(bool p_grayscale, bool p_color_image, float p_max_value) const {
 	if (save_exr_buffer_func == nullptr) {
 		return Vector<uint8_t>();
 	}
-	return save_exr_buffer_func(Ref<Image>((Image *)this), p_grayscale);
+	return save_exr_buffer_func(Ref<Image>((Image *)this), p_grayscale, p_color_image, p_max_value);
 }
 
 Error Image::save_dds(const String &p_path) const {
@@ -2938,6 +2949,10 @@ Error Image::compress(CompressMode p_mode, CompressSource p_source, ASTCFormat p
 }
 
 Error Image::compress_from_channels(CompressMode p_mode, UsedChannels p_channels, ASTCFormat p_astc_format) {
+	return _compress_from_channels(p_mode, p_channels, p_astc_format, BPTC_DETECT);
+}
+
+Error Image::_compress_from_channels(CompressMode p_mode, UsedChannels p_channels, ASTCFormat p_astc_format, BPTCFormat p_bptc_format) {
 	ERR_FAIL_COND_V(data.is_empty(), ERR_INVALID_DATA);
 
 	// RenderingDevice only.
@@ -2946,7 +2961,7 @@ Error Image::compress_from_channels(CompressMode p_mode, UsedChannels p_channels
 			case COMPRESS_BPTC: {
 				// BC7 is unsupported currently.
 				if ((format >= FORMAT_RF && format <= FORMAT_RGBE9995) && _image_compress_bptc_rd_func) {
-					Error result = _image_compress_bptc_rd_func(this, p_channels);
+					Error result = _image_compress_bptc_rd_func(this, p_channels, p_bptc_format);
 
 					// If the image was compressed successfully, we return here. If not, we fall back to the default compression scheme.
 					if (result == OK) {
@@ -2985,7 +3000,7 @@ Error Image::compress_from_channels(CompressMode p_mode, UsedChannels p_channels
 		} break;
 		case COMPRESS_BPTC: {
 			ERR_FAIL_NULL_V(_image_compress_bptc_func, ERR_UNAVAILABLE);
-			_image_compress_bptc_func(this, p_channels);
+			_image_compress_bptc_func(this, p_channels, p_bptc_format);
 		} break;
 		case COMPRESS_ASTC: {
 			ERR_FAIL_NULL_V(_image_compress_astc_func, ERR_UNAVAILABLE);
@@ -3868,8 +3883,8 @@ void Image::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("save_png_to_buffer"), &Image::save_png_to_buffer);
 	ClassDB::bind_method(D_METHOD("save_jpg", "path", "quality"), &Image::save_jpg, DEFVAL(0.75));
 	ClassDB::bind_method(D_METHOD("save_jpg_to_buffer", "quality"), &Image::save_jpg_to_buffer, DEFVAL(0.75));
-	ClassDB::bind_method(D_METHOD("save_exr", "path", "grayscale"), &Image::save_exr, DEFVAL(false));
-	ClassDB::bind_method(D_METHOD("save_exr_to_buffer", "grayscale"), &Image::save_exr_to_buffer, DEFVAL(false));
+	ClassDB::bind_method(D_METHOD("save_exr", "path", "grayscale", "color_image", "max_linear_value"), &Image::save_exr, DEFVAL(false), DEFVAL(false), DEFVAL(-1.0));
+	ClassDB::bind_method(D_METHOD("save_exr_to_buffer", "grayscale", "color_image", "max_linear_value"), &Image::save_exr_to_buffer, DEFVAL(false), DEFVAL(false), DEFVAL(-1.0));
 	ClassDB::bind_method(D_METHOD("save_dds", "path"), &Image::save_dds);
 	ClassDB::bind_method(D_METHOD("save_dds_to_buffer"), &Image::save_dds_to_buffer);
 
@@ -3927,6 +3942,7 @@ void Image::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("load_bmp_from_buffer", "buffer"), &Image::load_bmp_from_buffer);
 	ClassDB::bind_method(D_METHOD("load_ktx_from_buffer", "buffer"), &Image::load_ktx_from_buffer);
 	ClassDB::bind_method(D_METHOD("load_dds_from_buffer", "buffer"), &Image::load_dds_from_buffer);
+	ClassDB::bind_method(D_METHOD("load_exr_from_buffer", "buffer"), &Image::load_exr_from_buffer);
 
 	ClassDB::bind_method(D_METHOD("load_svg_from_buffer", "buffer", "scale"), &Image::load_svg_from_buffer, DEFVAL(1.0));
 	ClassDB::bind_method(D_METHOD("load_svg_from_string", "svg_str", "scale"), &Image::load_svg_from_string, DEFVAL(1.0));
@@ -4426,6 +4442,14 @@ Error Image::load_jpg_from_buffer(const Vector<uint8_t> &p_array) {
 	return _load_from_buffer(p_array, _jpg_mem_loader_func);
 }
 
+Error Image::load_exr_from_buffer(const Vector<uint8_t> &p_array) {
+	ERR_FAIL_NULL_V_MSG(
+			_exr_mem_loader_func,
+			ERR_UNAVAILABLE,
+			"The TinyEXR module isn't enabled. Recompile the Godot editor or export template binary with the `tinyexr_export_templates=yes` SCons option.");
+	return _load_from_buffer(p_array, _exr_mem_loader_func);
+}
+
 Error Image::load_webp_from_buffer(const Vector<uint8_t> &p_array) {
 	return _load_from_buffer(p_array, _webp_mem_loader_func);
 }
@@ -4575,14 +4599,18 @@ void Image::renormalize_uint8(uint8_t *p_rgb) {
 	n += Vector3(1, 1, 1);
 	n *= 0.5;
 	n *= 255;
-	p_rgb[0] = CLAMP(int(n.x), 0, 255);
-	p_rgb[1] = CLAMP(int(n.y), 0, 255);
-	p_rgb[2] = CLAMP(int(n.z), 0, 255);
+	p_rgb[0] = CLAMP(int(Math::round(n.x)), 0, 255);
+	p_rgb[1] = CLAMP(int(Math::round(n.y)), 0, 255);
+	p_rgb[2] = CLAMP(int(Math::round(n.z)), 0, 255);
 }
 
 void Image::renormalize_float(float *p_rgb) {
 	Vector3 n(p_rgb[0], p_rgb[1], p_rgb[2]);
+	n *= 2.0;
+	n -= Vector3(1, 1, 1);
 	n.normalize();
+	n += Vector3(1, 1, 1);
+	n *= 0.5;
 	p_rgb[0] = n.x;
 	p_rgb[1] = n.y;
 	p_rgb[2] = n.z;
@@ -4590,7 +4618,11 @@ void Image::renormalize_float(float *p_rgb) {
 
 void Image::renormalize_half(uint16_t *p_rgb) {
 	Vector3 n(Math::half_to_float(p_rgb[0]), Math::half_to_float(p_rgb[1]), Math::half_to_float(p_rgb[2]));
+	n *= 2.0;
+	n -= Vector3(1, 1, 1);
 	n.normalize();
+	n += Vector3(1, 1, 1);
+	n *= 0.5;
 	p_rgb[0] = Math::make_half_float(n.x);
 	p_rgb[1] = Math::make_half_float(n.y);
 	p_rgb[2] = Math::make_half_float(n.z);
@@ -4604,9 +4636,9 @@ void Image::renormalize_uint16(uint16_t *p_rgb) {
 	n += Vector3(1, 1, 1);
 	n *= 0.5;
 	n *= 65535;
-	p_rgb[0] = CLAMP(int(n.x), 0, 65535);
-	p_rgb[1] = CLAMP(int(n.y), 0, 65535);
-	p_rgb[2] = CLAMP(int(n.z), 0, 65535);
+	p_rgb[0] = CLAMP(int(Math::round(n.x)), 0, 65535);
+	p_rgb[1] = CLAMP(int(Math::round(n.y)), 0, 65535);
+	p_rgb[2] = CLAMP(int(Math::round(n.z)), 0, 65535);
 }
 
 Image::Image(const uint8_t *p_mem_png_jpg, int p_len) {

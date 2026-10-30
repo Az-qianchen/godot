@@ -103,6 +103,7 @@
 	}
 
 	NSMutableArray *new_allowed_types = [[NSMutableArray alloc] init];
+	Vector<Vector<String>> pref_types;
 	bool has_type_popup = false;
 	{
 		NSTextField *label = [NSTextField labelWithString:[NSString stringWithUTF8String:RTR("Format").utf8().get_data()]];
@@ -117,6 +118,7 @@
 			NSPopUpButton *popup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
 			for (int i = 0; i < p_filters.size(); i++) {
 				Vector<String> tokens = p_filters[i].split(";");
+				Vector<String> pref_type;
 				if (tokens.size() >= 1) {
 					String flt = tokens[0].strip_edges();
 					String mime = (tokens.size() >= 3) ? tokens[2].strip_edges() : String();
@@ -135,9 +137,11 @@
 								}
 								if (ut) {
 									[type_filters addObject:ut];
+									pref_type.push_back(str.replace("*.", "").strip_edges());
 								}
 							} else {
 								[type_filters addObject:[NSString stringWithUTF8String:str.replace("*.", "").strip_edges().utf8().get_data()]];
+								pref_type.push_back(str.replace("*.", "").strip_edges());
 							}
 						}
 					}
@@ -158,6 +162,7 @@
 					if ([type_filters count] > 0) {
 						NSString *name_str = [NSString stringWithUTF8String:((tokens.size() == 1) ? tokens[0] : tokens[1].strip_edges()).utf8().get_data()];
 						[new_allowed_types addObject:type_filters];
+						pref_types.push_back(pref_type);
 						[popup addItemWithTitle:name_str];
 					}
 				}
@@ -171,6 +176,7 @@
 			}
 		} else if (p_filters.size() == 1) {
 			Vector<String> tokens = p_filters[0].split(";");
+			Vector<String> pref_type;
 			if (tokens.size() >= 1) {
 				String flt = tokens[0].strip_edges();
 				String mime = (tokens.size() >= 3) ? tokens[2] : String();
@@ -189,9 +195,11 @@
 							}
 							if (ut) {
 								[type_filters addObject:ut];
+								pref_type.push_back(str.replace("*.", "").strip_edges());
 							}
 						} else {
 							[type_filters addObject:[NSString stringWithUTF8String:str.replace("*.", "").strip_edges().utf8().get_data()]];
+							pref_type.push_back(str.replace("*.", "").strip_edges());
 						}
 					}
 				}
@@ -210,10 +218,11 @@
 
 				if ([type_filters count] > 0) {
 					[new_allowed_types addObject:type_filters];
+					pref_types.push_back(pref_type);
 				}
 			}
 		}
-		[self setFileTypes:new_allowed_types];
+		[self setFileTypes:new_allowed_types pref:pref_types];
 	}
 
 	[base_view addSubview:view];
@@ -236,6 +245,7 @@
 				[p_panel setAllowedContentTypes:type_filters];
 			}
 		} else {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 120000
 			if (type_filters && [type_filters count] == 1 && [[type_filters objectAtIndex:0] isEqualToString:@"*"]) {
 				[p_panel setAllowedFileTypes:nil];
 				[p_panel setAllowsOtherFileTypes:true];
@@ -243,12 +253,15 @@
 				[p_panel setAllowsOtherFileTypes:false];
 				[p_panel setAllowedFileTypes:type_filters];
 			}
+#endif
 		}
 	} else {
 		if (@available(macOS 11, *)) {
 			[p_panel setAllowedContentTypes:@[ UTTypeData ]];
 		} else {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 120000
 			[p_panel setAllowedFileTypes:nil];
+#endif
 		}
 		[p_panel setAllowsOtherFileTypes:true];
 	}
@@ -278,8 +291,9 @@
 	return cid;
 }
 
-- (void)setFileTypes:(NSMutableArray *)p_allowed_types {
+- (void)setFileTypes:(NSMutableArray *)p_allowed_types pref:(const Vector<Vector<String>> &)p_preftypes {
 	allowed_types = p_allowed_types;
+	preferred_types = p_preftypes;
 }
 
 - (instancetype)initWithDialog:(NSSavePanel *)p_dialog {
@@ -321,6 +335,7 @@
 					[dialog setAllowedContentTypes:type_filters];
 				}
 			} else {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 120000
 				if (type_filters && [type_filters count] == 1 && [[type_filters objectAtIndex:0] isEqualToString:@"*"]) {
 					[dialog setAllowedFileTypes:nil];
 					[dialog setAllowsOtherFileTypes:true];
@@ -328,13 +343,16 @@
 					[dialog setAllowsOtherFileTypes:false];
 					[dialog setAllowedFileTypes:type_filters];
 				}
+#endif
 			}
 			cur_index = index;
 		} else {
 			if (@available(macOS 11, *)) {
 				[dialog setAllowedContentTypes:@[ UTTypeData ]];
 			} else {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 120000
 				[dialog setAllowedFileTypes:nil];
+#endif
 			}
 			[dialog setAllowsOtherFileTypes:true];
 			cur_index = -1;
@@ -344,6 +362,21 @@
 
 - (void)setRootPath:(const String &)p_root_path {
 	root = p_root_path;
+}
+
+- (String)validateFilename:(const String &)p_path {
+	if (@available(macOS 11, *)) {
+		if (allowed_types) {
+			NSMutableArray *type_filters = [allowed_types objectAtIndex:cur_index];
+			UTType *ut = [type_filters objectAtIndex:0];
+			String ext = String::utf8([[ut preferredFilenameExtension] UTF8String]);
+			Vector<String> pref_ext = preferred_types[cur_index];
+			if (!pref_ext.is_empty() && !pref_ext.has(ext) && p_path.has_extension(ext) && pref_ext[0] != "*") {
+				return p_path.get_basename() + "." + pref_ext[0];
+			}
+		}
+	}
+	return p_path;
 }
 
 - (BOOL)panel:(id)sender validateURL:(NSURL *)url error:(NSError *_Nullable *)outError {

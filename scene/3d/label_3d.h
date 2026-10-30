@@ -32,8 +32,8 @@
 
 #include "scene/3d/visual_instance_3d.h"
 #include "scene/resources/font.h"
-
-#include "servers/text_server.h"
+#include "scene/resources/material.h"
+#include "servers/text/text_server.h"
 
 class Label3D : public GeometryInstance3D {
 	GDCLASS(Label3D, GeometryInstance3D);
@@ -136,7 +136,6 @@ private:
 	RID text_rid;
 	Vector<RID> lines_rid;
 
-	RID base_material;
 	StandardMaterial3D::BillboardMode billboard_mode = StandardMaterial3D::BILLBOARD_DISABLED;
 	StandardMaterial3D::TextureFilter texture_filter = StandardMaterial3D::TEXTURE_FILTER_LINEAR_WITH_MIPMAPS;
 

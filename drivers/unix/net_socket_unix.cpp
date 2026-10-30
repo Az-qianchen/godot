@@ -44,6 +44,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
@@ -129,7 +130,7 @@ void NetSocketUnix::_set_ip_port(struct sockaddr_storage *p_addr, IPAddress *r_i
 	}
 }
 
-NetSocket *NetSocketUnix::_create_func() {
+Ref<NetSocket> NetSocketUnix::_create_func() {
 	return memnew(NetSocketUnix);
 }
 
@@ -189,7 +190,7 @@ bool NetSocketUnix::_can_use_ip(const IPAddress &p_ip, const bool p_for_bind) co
 
 bool NetSocketUnix::_can_use_path(const CharString &p_path) const {
 	// Path must not exceed maximum path length for Unix domain socket
-	return !p_path.is_empty() && (size_t)p_path.length() < sizeof(((sockaddr_un *)0)->sun_path);
+	return !p_path.is_empty() && (size_t)p_path.length() < sizeof(((sockaddr_un *)nullptr)->sun_path);
 }
 
 _FORCE_INLINE_ Error NetSocketUnix::_change_multicast_group(IPAddress p_ip, String p_if_name, bool p_add) {
@@ -429,20 +430,16 @@ Error NetSocketUnix::bind(NetSocket::Address p_addr) {
 	ERR_FAIL_COND_V(_family != p_addr.get_family(), ERR_INVALID_PARAMETER);
 	switch (p_addr.get_family()) {
 		case Family::INET: {
-			Error res = _inet_bind(p_addr.ip(), p_addr.port());
-			ERR_FAIL_COND_V(res != OK, res);
-		} break;
+			return _inet_bind(p_addr.ip(), p_addr.port());
+		}
 		case Family::UNIX: {
 			_unix_path = p_addr.get_path();
-			Error res = _unix_bind(_unix_path);
-			ERR_FAIL_COND_V(res != OK, res);
-		} break;
+			return _unix_bind(_unix_path);
+		}
 		case Family::NONE:
 		default:
 			return ERR_INVALID_PARAMETER;
 	}
-
-	return OK;
 }
 
 Error NetSocketUnix::listen(int p_max_pending) {
@@ -799,7 +796,8 @@ Ref<NetSocket> NetSocketUnix::_inet_accept(IPAddress &r_ip, uint16_t &r_port) {
 
 	_set_ip_port(&their_addr, &r_ip, &r_port);
 
-	NetSocketUnix *ns = memnew(NetSocketUnix);
+	Ref<NetSocketUnix> ns;
+	ns.instantiate();
 	ns->_set_socket(fd, _ip_type, _is_stream);
 	ns->set_blocking_enabled(false);
 	return Ref<NetSocket>(ns);
@@ -816,7 +814,7 @@ Ref<NetSocket> NetSocketUnix::_unix_accept() {
 		return Ref<NetSocket>();
 	}
 
-	NetSocketUnix *ret = memnew(NetSocketUnix);
+	Ref<NetSocketUnix> ret = memnew(NetSocketUnix);
 	ret->_sock = fd;
 	ret->_family = _family;
 	ret->_unix_path = _unix_path;

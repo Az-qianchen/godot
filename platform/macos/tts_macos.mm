@@ -30,6 +30,8 @@
 
 #import "tts_macos.h"
 
+#include "servers/display/display_server.h"
+
 @implementation TTS_MacOS
 
 - (id)init {
@@ -43,9 +45,11 @@
 		[self->synth setDelegate:self];
 		print_verbose("Text-to-Speech: AVSpeechSynthesizer initialized.");
 	} else {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 140000
 		self->synth = [[NSSpeechSynthesizer alloc] init];
 		[self->synth setDelegate:self];
 		print_verbose("Text-to-Speech: NSSpeechSynthesizer initialized.");
+#endif
 	}
 	return self;
 }
@@ -65,13 +69,13 @@
 		pos++;
 	}
 
-	DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_BOUNDARY, ids[utterance], pos);
+	DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServerEnums::TTS_UTTERANCE_BOUNDARY, ids[utterance], pos);
 }
 
 // AVSpeechSynthesizer callback (macOS 10.14+)
 
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)av_synth didCancelSpeechUtterance:(AVSpeechUtterance *)utterance API_AVAILABLE(macosx(10.14)) {
-	DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_CANCELED, ids[utterance]);
+	DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServerEnums::TTS_UTTERANCE_CANCELED, ids[utterance]);
 	ids.erase(utterance);
 	speaking = false;
 	[self update];
@@ -80,7 +84,7 @@
 // AVSpeechSynthesizer callback (macOS 10.14+)
 
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)av_synth didFinishSpeechUtterance:(AVSpeechUtterance *)utterance API_AVAILABLE(macosx(10.14)) {
-	DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_ENDED, ids[utterance]);
+	DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServerEnums::TTS_UTTERANCE_ENDED, ids[utterance]);
 	ids.erase(utterance);
 	speaking = false;
 	[self update];
@@ -88,6 +92,8 @@
 
 // NSSpeechSynthesizer callback (macOS 10.4+)
 
+// Deprecated in macOS 14.0, needs to be removed when compiling with min macOS 14.0.
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 140000
 - (void)speechSynthesizer:(NSSpeechSynthesizer *)ns_synth willSpeakWord:(NSRange)characterRange ofString:(NSString *)string {
 	if (!paused && have_utterance) {
 		// Convert from UTF-16 to UTF-32 position.
@@ -100,26 +106,27 @@
 			pos++;
 		}
 
-		DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_BOUNDARY, last_utterance, pos);
+		DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServerEnums::TTS_UTTERANCE_BOUNDARY, last_utterance, pos);
 	}
 }
 
 - (void)speechSynthesizer:(NSSpeechSynthesizer *)ns_synth didFinishSpeaking:(BOOL)success {
 	if (!paused && have_utterance) {
 		if (success) {
-			DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_ENDED, last_utterance);
+			DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServerEnums::TTS_UTTERANCE_ENDED, last_utterance);
 		} else {
-			DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_CANCELED, last_utterance);
+			DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServerEnums::TTS_UTTERANCE_CANCELED, last_utterance);
 		}
 		have_utterance = false;
 	}
 	speaking = false;
 	[self update];
 }
+#endif
 
 - (void)update {
 	if (!speaking && queue.size() > 0) {
-		DisplayServer::TTSUtterance &message = queue.front()->get();
+		TTSUtterance &message = queue.front()->get();
 
 		if (@available(macOS 10.14, *)) {
 			AVSpeechSynthesizer *av_synth = synth;
@@ -136,6 +143,7 @@
 			ids[new_utterance] = message.id;
 			[av_synth speakUtterance:new_utterance];
 		} else {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 140000
 			NSSpeechSynthesizer *ns_synth = synth;
 			[ns_synth setObject:nil forProperty:NSSpeechResetProperty error:nil];
 			[ns_synth setVoice:[NSString stringWithUTF8String:message.voice.utf8().get_data()]];
@@ -147,10 +155,11 @@
 			last_utterance = message.id;
 			have_utterance = true;
 			[ns_synth startSpeakingString:[NSString stringWithUTF8String:message.text.utf8().get_data()]];
+#endif
 		}
+		DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServerEnums::TTS_UTTERANCE_STARTED, message.id);
 		queue.pop_front();
 
-		DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_STARTED, message.id);
 		speaking = true;
 	}
 }
@@ -160,8 +169,10 @@
 		AVSpeechSynthesizer *av_synth = synth;
 		[av_synth pauseSpeakingAtBoundary:AVSpeechBoundaryImmediate];
 	} else {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 140000
 		NSSpeechSynthesizer *ns_synth = synth;
 		[ns_synth pauseSpeakingAtBoundary:NSSpeechImmediateBoundary];
+#endif
 	}
 	paused = true;
 }
@@ -171,26 +182,30 @@
 		AVSpeechSynthesizer *av_synth = synth;
 		[av_synth continueSpeaking];
 	} else {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 140000
 		NSSpeechSynthesizer *ns_synth = synth;
 		[ns_synth continueSpeaking];
+#endif
 	}
 	paused = false;
 }
 
 - (void)stopSpeaking {
-	for (DisplayServer::TTSUtterance &message : queue) {
-		DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_CANCELED, message.id);
+	for (TTSUtterance &message : queue) {
+		DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServerEnums::TTS_UTTERANCE_CANCELED, message.id);
 	}
 	queue.clear();
 	if (@available(macOS 10.14, *)) {
 		AVSpeechSynthesizer *av_synth = synth;
 		[av_synth stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
 	} else {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 140000
 		NSSpeechSynthesizer *ns_synth = synth;
 		if (have_utterance) {
-			DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_CANCELED, last_utterance);
+			DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServerEnums::TTS_UTTERANCE_CANCELED, last_utterance);
 		}
 		[ns_synth stopSpeaking];
+#endif
 	}
 	have_utterance = false;
 	speaking = false;
@@ -210,17 +225,17 @@
 	}
 }
 
-- (void)speak:(const String &)text voice:(const String &)voice volume:(int)volume pitch:(float)pitch rate:(float)rate utterance_id:(int)utterance_id interrupt:(bool)interrupt {
+- (void)speak:(const String &)text voice:(const String &)voice volume:(int)volume pitch:(float)pitch rate:(float)rate utterance_id:(int64_t)utterance_id interrupt:(bool)interrupt {
 	if (interrupt) {
 		[self stopSpeaking];
 	}
 
 	if (text.is_empty()) {
-		DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServer::TTS_UTTERANCE_CANCELED, utterance_id);
+		DisplayServer::get_singleton()->tts_post_utterance_event(DisplayServerEnums::TTS_UTTERANCE_CANCELED, utterance_id);
 		return;
 	}
 
-	DisplayServer::TTSUtterance message;
+	TTSUtterance message;
 	message.text = text;
 	message.voice = voice;
 	message.volume = CLAMP(volume, 0, 100);
@@ -250,6 +265,7 @@
 			list.push_back(voice_d);
 		}
 	} else {
+#if MAC_OS_X_VERSION_MIN_REQUIRED < 140000
 		for (NSString *voiceIdentifierString in [NSSpeechSynthesizer availableVoices]) {
 			NSString *voiceLocaleIdentifier = [[NSSpeechSynthesizer attributesForVoice:voiceIdentifierString] objectForKey:NSVoiceLocaleIdentifier];
 			NSString *voiceName = [[NSSpeechSynthesizer attributesForVoice:voiceIdentifierString] objectForKey:NSVoiceName];
@@ -259,6 +275,7 @@
 			voice_d["language"] = String([voiceLocaleIdentifier UTF8String]);
 			list.push_back(voice_d);
 		}
+#endif
 	}
 	return list;
 }

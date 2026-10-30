@@ -39,20 +39,20 @@
 #include "core/templates/local_vector.h"
 #include "core/templates/rid.h"
 #include "core/templates/rid_owner.h"
-#include "servers/navigation/navigation_path_query_parameters_2d.h"
-#include "servers/navigation/navigation_path_query_result_2d.h"
-#include "servers/navigation_server_2d.h"
+#include "servers/navigation_2d/navigation_path_query_parameters_2d.h"
+#include "servers/navigation_2d/navigation_path_query_result_2d.h"
+#include "servers/navigation_2d/navigation_server_2d.h"
 
 /// The commands are functions executed during the `sync` phase.
 
 #define MERGE_INTERNAL(A, B) A##B
 #define MERGE(A, B) MERGE_INTERNAL(A, B)
 
-#define COMMAND_1(F_NAME, T_0, D_0)        \
+#define COMMAND_1(F_NAME, T_0, D_0) \
 	virtual void F_NAME(T_0 D_0) override; \
 	void MERGE(_cmd_, F_NAME)(T_0 D_0)
 
-#define COMMAND_2(F_NAME, T_0, D_0, T_1, D_1)       \
+#define COMMAND_2(F_NAME, T_0, D_0, T_1, D_1) \
 	virtual void F_NAME(T_0 D_0, T_1 D_1) override; \
 	void MERGE(_cmd_, F_NAME)(T_0 D_0, T_1 D_1)
 
