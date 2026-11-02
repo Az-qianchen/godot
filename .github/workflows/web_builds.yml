@@ -10,7 +10,7 @@ env:
     debug_symbols=no
     use_closure_compiler=yes
     optimize=size_extra
-    disable_3d=yes
+    disable_3d=no
     module_text_server_adv_enabled=yes
     module_text_server_fb_enabled=no
     module_csg_enabled=no
