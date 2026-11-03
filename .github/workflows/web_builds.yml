@@ -4,12 +4,13 @@ on:
   workflow_dispatch:
 
 # Global Settings
+# modules_enabled_by_default="no"
 # lto="full"
 # module_text_server_adv_enabled=yes
 # module_text_server_fb_enabled=no
+# build_profile=.github/workflows/config.build
 env:
   SCONS_FLAGS: >-
-    build_profile=.github/workflows/config.build
     dev_mode=no
     debug_symbols=no
     use_closure_compiler=yes
@@ -44,6 +45,7 @@ env:
     minizip=no
     vulkan=no
     use_volk=no
+    accesskit=no
   EM_VERSION: 4.0.11
 
 jobs:
