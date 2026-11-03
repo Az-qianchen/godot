@@ -9,6 +9,7 @@ on:
 # module_text_server_fb_enabled=no
 env:
   SCONS_FLAGS: >-
+    build_profile=config.build
     dev_mode=no
     debug_symbols=no
     use_closure_compiler=yes
