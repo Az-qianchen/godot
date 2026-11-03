@@ -46,6 +46,7 @@ env:
     vulkan=no
     use_volk=no
     accesskit=no
+    linkflags=-Wl,-Map=bin/godot.map
   EM_VERSION: 4.0.11
 
 jobs:
@@ -57,16 +58,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Web Template Release (wasm64, single-thread)
-            cache-name: web-template-wasm64-release
+          - name: Web Template Release (wasm32, single-thread)
+            cache-name: web-template-wasm32-release
             target: template_release
-            scons-flags: threads=no arch=wasm64
+            scons-flags: threads=no arch=wasm32
             artifact: true
 
-          - name: Web Template Debug (wasm64, single-thread)
-            cache-name: web-template-wasm64-debug
+          - name: Web Template Debug (wasm32, single-thread)
+            cache-name: web-template-wasm32-debug
             target: template_debug
-            scons-flags: threads=no arch=wasm64
+            scons-flags: threads=no arch=wasm32
             artifact: true
 
     steps:
