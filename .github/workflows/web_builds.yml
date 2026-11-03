@@ -57,16 +57,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: Template w/ threads, 64-bit (target=template_release, threads=yes, arch=wasm64)
-            cache-name: web-template
+          - name: Web Template Release (wasm64, single-thread)
+            cache-name: web-template-wasm64-release
             target: template_release
-            scons-flags: threads=yes arch=wasm64
+            scons-flags: threads=no arch=wasm64
             artifact: true
 
-          - name: Template w/o threads, 32-bit (target=template_release, threads=no, arch=wasm32)
-            cache-name: web-nothreads-template
-            target: template_release
-            scons-flags: threads=no arch=wasm32
+          - name: Web Template Debug (wasm64, single-thread)
+            cache-name: web-template-wasm64-debug
+            target: template_debug
+            scons-flags: threads=no arch=wasm64
             artifact: true
 
     steps:
